@@ -27,10 +27,10 @@ class Normalizer():
 		delta = new_state - self.mu
 		delta2 = new_state - previous_mu
 		self.M2 += (delta * delta2)
-		self.sigma += M2/n
+		self.sigma += M2/n.clip(min = 1e-2)
 
 	def normalize(self, new_state):
-		return (new_state - self.mu) / np.sqrt(self.sigma)
+		return (new_state - self.mu) / np.sqrt(self.var)
 
 class Policy():
 
@@ -59,13 +59,22 @@ class Policy():
 
 
 class ARS():
-	def __init__(self, env,train_length = 1000, alpha = 0.02, N_of_directions = 16, noise = 0.03, N_top_performing_directions = 16):
+	def __init__(self,
+				 env,
+				 train_length = 1000,
+				 episode_length = 1000,
+				 alpha = 0.02,
+				 N_of_directions = 16,
+				 noise = 0.03,
+				 N_top_performing_directions = 16):
+		
 		self.env = env
 		self.state_shape = env.observation_space.shape[0]
 		self.action_shape = env.action_space.shape[0]
 
 		# Hyperparameters
 		self.train_length = train_length
+		self.episode_length = episode_length
 		self.alpha = alpha
 		self.N_of_directions = N_of_directions
 		self.noise = noise
@@ -76,18 +85,25 @@ class ARS():
 		sum_rewards = 0
 		num_plays = 0
 		done = False
-		while not done and num_plays <= 1000:
+		while not done and num_plays <= self.episode_length:
 			action = policy.calculate_action(state, sign, direction)
 			state, reward, done, _ = self.env.step(action)
 			sum_rewards += reward
 			num_plays += 1
-		return reward
+		return sum_rewards
 
 	def evaluate_policy(self, policy):
 		state = self.env.reset()
+		sum_rewards = 0
+		num_plays = 0
 		action = policy.calculate_action(state)
 		state, reward, done, _ = env.step(action)
-		return reward
+		while not done and num_plays <= self.episode_length:
+			action = policy.calculate_action(state)
+			state, reward, done, _ = self.env.step(action)
+			sum_rewards += reward
+			num_plays += 1
+		return sum_rewards
 
 	def train(self, policy):
 		for episode in range(self.train_length):
@@ -97,9 +113,9 @@ class ARS():
 			positive_rewards = [0 for _ in range(self.N_of_directions)]
 			negative_rewards = [0 for _ in range(self.N_of_directions)]
 
-			positive_rewards = [self.calculate_reward('positive', policy, direction) for direction in random_directions]
+			positive_rewards = [self.calculate_reward('+', policy, direction) for direction in random_directions]
 			#print('calculated positive')
-			negative_rewards = [self.calculate_reward('negative', policy, direction) for direction in random_directions]
+			negative_rewards = [self.calculate_reward('-', policy, direction) for direction in random_directions]
 			#print('calculated negative')
 
 			all_rewards = np.array(positive_rewards + negative_rewards)
