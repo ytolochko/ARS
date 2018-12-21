@@ -1,151 +1,136 @@
-"""
-This is an implementation of the Augmented Random Search algorithm as described in the paper by Horia Mania, Aurelia Guy, Benjamin Recht. https://arxiv.org/pdf/1803.07055.pdf
-"""
-
-import gym 
+import os
 import numpy as np
-import os 
+import gym
 from gym import wrappers
+
+# in case you don't want to use proprietary MUJOCO environemtns, there are pybullet alternatives
 import pybullet_envs
 
-env_name = 'HalfCheetahBulletEnv-v0'
+class ARS():
+
+    def __init__(self, 
+                 training_length = 1000,
+                 episode_length = 1000,
+                 alpha = .02,
+                 N_of_directions = 16,
+                 b = 8,
+                 noise = .03,
+                 env_name = 'HalfCheetah-v2'):
+
+        self.training_length = training_length
+        self.episode_length = episode_length
+        self.alpha = alpha
+        self.N_of_directions = N_of_directions
+        self.b = b
+        self.noise = noise
+        self.env_name = env_name
+
+
+    def calculate_rewards(self, env, normalizer, policy, sign = None, direction = None):
+        state = env.reset()
+        done = False
+        num_updates = 0.
+        sum_rewards = 0
+        while not done and num_updates < self.episode_length:
+            normalizer.update(state)
+            state = normalizer.normalize(state)
+            action = policy.evaluate(state, sign, direction)
+            state, reward, done, _ = env.step(action)
+            reward = max(min(reward, 1), -1)
+            sum_rewards += reward
+            num_updates += 1
+        return sum_rewards
+
+    def train(self, env, policy, normalizer):
+        
+        for step in range(self.training_length):
+            
+ g           random_directions = policy.create_random_directions()
+     
+            positive_rewards = [self.calculate_rewards(env, normalizer, policy, sign = '+', direction = direction) for direction in random_directions]
+            negative_rewards = [self.calculate_rewards(env, normalizer, policy, sign = '-', direction = direction) for direction in random_directions]
+
+            all_rewards = np.array(positive_rewards + negative_rewards)
+            reward_sigma = np.std(all_rewards)
+            
+            max_rewards = {k:max(r_pos, r_neg) for k,(r_pos,r_neg) in enumerate(zip(positive_rewards, negative_rewards))}
+            order_of_directions = sorted(max_rewards.keys(), key = lambda x:max_rewards[x], reverse = True)[:self.b]
+            rollouts = [(positive_rewards[k], negative_rewards[k], random_directions[k]) for k in order_of_directions]
+            
+            policy.update(rollouts, reward_sigma)
+
+            reward_evaluation = self.calculate_rewards(env, normalizer, policy)
+            print('Step:', step, 'Reward:', reward_evaluation)
+
+            # Uncomment here if you want to see how the agent prgoresses in the environment after each learning epoch
+            # agent is rendered until done = True, i.e. until the episode is over (for example, it falls down)
+
+            #state = env.reset()
+            #done = False
+            #while not done:
+            #    env.render()
+            #    action = policy.simulate_step(state)
+            #    state, _, done, _ = env.step(action)
 
 class Normalizer():
-	def __init__(self, input_shape):
-		self.n = np.zeros(input_shape)
-		self.mu = np.zeros(input_shape)
-		self.sigma = np.zeros(input_shape)
-		self.M2 = np.zeros(input_shape)
+    
+    def __init__(self, input_shape):
+        self.n = np.zeros(input_shape)
+        self.mu = np.zeros(input_shape)
+        self.M2 = np.zeros(input_shape)
+        self.sigma = np.zeros(input_shape)
+    
+    def update(self, new_state):
+        # Since we do not know how long will we train, we have to keep information on the number of updates in order to do online calculation of mean and variance 
+        self.n += 1
+        previous_mu = self.mu # previous mu needed for online variance calculation
+        self.mu += (new_state - self.mu) / self.n
+        
+        # Welford's Online algorithm
+        delta = new_state - self.mu
+        delta2 = new_state - previous_mu
+        self.M2 += (delta * delta2)
+        self.sigma = (self.M2/self.n).clip(min = 1e-2)
 
-	def update(self, new_state):
-		# Since we do not know how long will we train, we have to keep information on the number of updates in order to do online calculation of mean and variance 
-		self.n += 1
-		previous_mu = self.mu # previous mu needed for online variance calculation
-		self.mu += (new_state - self.mu) / n
-		
-		# Welford's Online algorithm
-		delta = new_state - self.mu
-		delta2 = new_state - previous_mu
-		self.M2 += (delta * delta2)
-		self.sigma += M2/n.clip(min = 1e-2)
+    def normalize(self, new_state):
+        return (new_state - self.mu) / np.sqrt(self.sigma)
 
-	def normalize(self, new_state):
-		return (new_state - self.mu) / np.sqrt(self.var)
 
 class Policy():
+    
+    def __init__(self, input_size, output_size):
+        self.theta = np.zeros((output_size, input_size))
+    
+    def evaluate(self, state, sign = None, direction = None):
+        if sign == "+":
+            return (self.theta + ars.noise*direction).dot(state)
+        elif sign == '-':
+            return (self.theta - ars.noise*direction).dot(state)
+        
+        return self.theta.dot(state)
+    
+    def create_random_directions(self):
+        return [np.random.randn(*self.theta.shape) for _ in range(ars.N_of_directions)]
+    
+    def update(self, rollouts, reward_sigma):
+        update_step = np.zeros(self.theta.shape)
+        for positive_reward, negative_reward, direction in rollouts:
+            update_step += (positive_reward - negative_reward) * direction
+        self.theta += ars.alpha / (ars.b * reward_sigma) * update_step
 
-	def __init__(self, input_shape, output_shape):
-		# Theta is the matrix (parameter of the policy) that is used for calculating the action proposed by the policy. See algorithm 1 and 2 in the paper
-		self.theta = np.zeros((output_shape, input_shape))
-
-	def calculate_action(self, state, sign = None, direction = None):
-		if sign == '+':
-			# noise = zero mean Gaussian vector
-			return  (self.theta + ars.noise * direction).dot(state)
-		elif sign == '-':
-			return (self.theta - ars.noise * direction).dot(state)
-
-		return self.theta.dot(state)
-	
-	def update(self, rollouts, reward_sigma):
-		alpha = ars.alpha
-		b = ars.b
-		update_step = 0
-		for positive_reward, negative_reward, direction in rollouts[:b]:
-			update_step += (positive_reward - negative_reward) * direction
-			self.theta += alpha/(b * reward_sigma) * update_step
-
-		
+    def simulate_step(self, input):
+        return self.theta.dot(input)
 
 
-class ARS():
-	def __init__(self,
-				 env,
-				 train_length = 1000,
-				 episode_length = 1000,
-				 alpha = 0.02,
-				 N_of_directions = 16,
-				 noise = 0.03,
-				 N_top_performing_directions = 16):
-		
-		self.env = env
-		self.state_shape = env.observation_space.shape[0]
-		self.action_shape = env.action_space.shape[0]
-
-		# Hyperparameters
-		self.train_length = train_length
-		self.episode_length = episode_length
-		self.alpha = alpha
-		self.N_of_directions = N_of_directions
-		self.noise = noise
-		self.b = N_top_performing_directions
-
-	def calculate_reward(self, sign, policy, direction):
-		state = self.env.reset()
-		sum_rewards = 0
-		num_plays = 0
-		done = False
-		while not done and num_plays <= self.episode_length:
-			action = policy.calculate_action(state, sign, direction)
-			state, reward, done, _ = self.env.step(action)
-			sum_rewards += reward
-			num_plays += 1
-		return sum_rewards
-
-	def evaluate_policy(self, policy):
-		state = self.env.reset()
-		sum_rewards = 0
-		num_plays = 0
-		action = policy.calculate_action(state)
-		state, reward, done, _ = env.step(action)
-		while not done and num_plays <= self.episode_length:
-			action = policy.calculate_action(state)
-			state, reward, done, _ = self.env.step(action)
-			sum_rewards += reward
-			num_plays += 1
-		return sum_rewards
-
-	def train(self, policy):
-		for episode in range(self.train_length):
-
-			random_directions = [np.random.rand(self.action_shape, self.state_shape) for _ in range(self.N_of_directions)]
-
-			positive_rewards = [0 for _ in range(self.N_of_directions)]
-			negative_rewards = [0 for _ in range(self.N_of_directions)]
-
-			positive_rewards = [self.calculate_reward('+', policy, direction) for direction in random_directions]
-			#print('calculated positive')
-			negative_rewards = [self.calculate_reward('-', policy, direction) for direction in random_directions]
-			#print('calculated negative')
-
-			all_rewards = np.array(positive_rewards + negative_rewards)
-			reward_sigma = np.std(all_rewards)
-
-			max_rewards = {k:max(positive_reward, negative_reward) for k, (positive_reward, negative_reward) in enumerate(zip(positive_rewards, negative_rewards))}
-			sorted_max_rewards_keys = sorted(max_rewards.keys(), key = lambda x : max_rewards[x])
-			rollouts = [(positive_rewards[k], negative_rewards[k], random_directions[k]) for k in sorted_max_rewards_keys]
-			policy.update(rollouts, reward_sigma)
-
-			reward = self.evaluate_policy(policy)
-			print('EPISODE NUMBER', episode, 'Reward:', reward)
-def mkdir(base, name):
-    path = os.path.join(base, name)
-    if not os.path.exists(path):
-        os.makedirs(path)
-    return path
 
 if __name__ == '__main__':
-	work_dir = mkdir('exp', 'brs')
-	monitor_dir = mkdir(work_dir, 'monitor')
 
-	np.random.seed(1)
+    env = gym.make('HalfCheetah-v2')
+    #env = wrappers.Monitor(env, monitor_dir, video_callable=lambda x: True, force = True)
+    state_shape = env.observation_space.shape[0]
+    action_shape = env.action_space.shape[0]
 
-	env = gym.make(env_name)
-	#env = wrappers.Monitor(env, monitor_dir, force = True)
-	
-	ars = ARS(env)
-	policy = Policy(ars.state_shape, ars.action_shape)
-	normalizer = Normalizer(ars.state_shape)
-
-	ars.train(policy)
-
+    ars = ARS()
+    policy = Policy(state_shape, action_shape)
+    normalizer = Normalizer(state_shape)
+    ars.train(env, policy, normalizer)
