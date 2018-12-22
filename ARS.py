@@ -42,11 +42,12 @@ class ARS():
         return sum_rewards
 
     def train(self, env, policy, normalizer):
-        
-        for step in range(self.training_length):
+        output_size, input_size = env.action_space.shape[0], env.observation_space.shape[0]
+
+        for i in range(self.training_length):
             
- g           random_directions = policy.create_random_directions()
-     
+            random_directions = [np.random.randn(output_size, input_size) for _ in range(ars.N_of_directions)]
+            
             positive_rewards = [self.calculate_rewards(env, normalizer, policy, sign = '+', direction = direction) for direction in random_directions]
             negative_rewards = [self.calculate_rewards(env, normalizer, policy, sign = '-', direction = direction) for direction in random_directions]
 
@@ -59,8 +60,8 @@ class ARS():
             
             policy.update(rollouts, reward_sigma)
 
-            reward_evaluation = self.calculate_rewards(env, normalizer, policy)
-            print('Step:', step, 'Reward:', reward_evaluation)
+            reward = self.calculate_rewards(env, normalizer, policy)
+            print('After iteration #:', i, 'the reward is:', reward)
 
             # Uncomment here if you want to see how the agent prgoresses in the environment after each learning epoch
             # agent is rendered until done = True, i.e. until the episode is over (for example, it falls down)
@@ -90,7 +91,7 @@ class Normalizer():
         delta = new_state - self.mu
         delta2 = new_state - previous_mu
         self.M2 += (delta * delta2)
-        self.sigma = (self.M2/self.n).clip(min = 1e-2)
+        self.sigma = (self.M2/self.n).clip(min = .01) # we have to clip in order to avoid numerical problems with sigma going towards zero
 
     def normalize(self, new_state):
         return (new_state - self.mu) / np.sqrt(self.sigma)
@@ -108,10 +109,7 @@ class Policy():
             return (self.theta - ars.noise*direction).dot(state)
         
         return self.theta.dot(state)
-    
-    def create_random_directions(self):
-        return [np.random.randn(*self.theta.shape) for _ in range(ars.N_of_directions)]
-    
+       
     def update(self, rollouts, reward_sigma):
         update_step = np.zeros(self.theta.shape)
         for positive_reward, negative_reward, direction in rollouts:
@@ -130,7 +128,8 @@ if __name__ == '__main__':
     state_shape = env.observation_space.shape[0]
     action_shape = env.action_space.shape[0]
 
-    ars = ARS()
-    policy = Policy(state_shape, action_shape)
     normalizer = Normalizer(state_shape)
+    policy = Policy(state_shape, action_shape)
+    
+    ars = ARS()
     ars.train(env, policy, normalizer)
