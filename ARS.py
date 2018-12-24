@@ -3,8 +3,8 @@ import numpy as np
 import gym
 from gym import wrappers
 
-# in case you don't want to use proprietary MUJOCO environemtns, there are pybullet alternatives which work with this implementation
-# i.e. HalfCheetahBulletEnv-v0 , AntBulletEnv-v0 and others
+# in case you don't want to use proprietary MuJoCo environemtns, there are open-source pybullet alternatives which 
+# work with this ARS implementation as well i.e. HalfCheetahBulletEnv-v0 , AntBulletEnv-v0 and others
 import pybullet_envs
 
 class ARS_V2_t():
