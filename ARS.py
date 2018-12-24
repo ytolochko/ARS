@@ -66,12 +66,12 @@ class ARS_V2_t():
             # Uncomment here if you want to see how the agent prgoresses in the environment after each learning epoch
             # agent is rendered until done = True, i.e. until the episode is over (for example, it falls down)
 
-            state = env.reset()
-            done = False
-            while not done:
-                env.render()
-                action = policy.simulate_step(state)
-                state, _, done, _ = env.step(action)
+            #state = env.reset()
+            #done = False
+            #while not done:
+            #    env.render()
+            #    action = policy.simulate_step(state)
+            #    state, _, done, _ = env.step(action)
 
 class ARS_V2(ARS_V2_t):
 
@@ -154,7 +154,13 @@ class Policy():
 
 if __name__ == '__main__':
 
-    env = gym.make('HalfCheetah-v2')
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env', action = 'store', dest = 'env_name', default = 'HalfCheetah-v2')
+    parser.add_argument('--alg', action = 'store', dest = 'alg', default = 'V2_t')
+    args = parser.parse_args()
+
+    env = gym.make(args.env_name)
     # Uncomment here if you want to include monitoring
     #env = wrappers.Monitor(env, monitor_dir, video_callable=lambda x: True, force = True)
     state_shape = env.observation_space.shape[0]
@@ -163,5 +169,14 @@ if __name__ == '__main__':
     normalizer = Normalizer(state_shape)
     policy = Policy(state_shape, action_shape)
     
-    ars = ARS_V2_t()
+    # Determine which ARS algorithm to train from parsed arguments
+    if args.alg == 'V2_t':
+        ars = ARS_V2_t()
+    elif args.alg == 'V2':
+        ars = ARS_V2()
+    elif args.alg == 'V1_t':
+        ars  = ARS_V1()
+    elif args.alg == 'V1':
+        ars = ARS_V1()
+
     ars.train(env, policy, normalizer)
