@@ -4,7 +4,7 @@ import gym
 from gym import wrappers
 
 # in case you don't want to use proprietary MUJOCO environemtns, there are pybullet alternatives which work with this implementation
-# i.e. 
+# i.e. HalfCheetahBulletEnv-v0 , AntBulletEnv-v0 and others
 import pybullet_envs
 
 class ARS_V2_t():
