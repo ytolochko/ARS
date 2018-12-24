@@ -3,7 +3,8 @@ import numpy as np
 import gym
 from gym import wrappers
 
-# in case you don't want to use proprietary MUJOCO environemtns, there are pybullet alternatives
+# in case you don't want to use proprietary MUJOCO environemtns, there are pybullet alternatives which work with this implementation
+# i.e. 
 import pybullet_envs
 
 class ARS_V2_t():
@@ -101,7 +102,6 @@ class ARS_V1(ARS_V1_t):
     
     def __init__(self):
         super().__init__()
-        # In contrast to V2_t, in V2 we do not drop those directions that yield the least improvement of the reward
         self.b = self.N_of_directions
 
 class Normalizer():
@@ -162,7 +162,8 @@ if __name__ == '__main__':
 
     env = gym.make(args.env_name)
     # Uncomment here if you want to include monitoring
-    #env = wrappers.Monitor(env, monitor_dir, video_callable=lambda x: True, force = True)
+    #env = wrappers.Monitor(env, monitor_dir, force = True)
+    
     state_shape = env.observation_space.shape[0]
     action_shape = env.action_space.shape[0]
 
