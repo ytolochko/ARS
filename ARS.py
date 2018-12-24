@@ -6,7 +6,7 @@ from gym import wrappers
 # in case you don't want to use proprietary MUJOCO environemtns, there are pybullet alternatives
 import pybullet_envs
 
-class ARS():
+class ARS_V2_t():
 
     def __init__(self, 
                  training_length = 1000,
@@ -55,10 +55,10 @@ class ARS():
             reward_sigma = np.std(all_rewards)
             
             max_rewards = {k:max(r_pos, r_neg) for k,(r_pos,r_neg) in enumerate(zip(positive_rewards, negative_rewards))}
-            order_of_directions = sorted(max_rewards.keys(), key = lambda x:max_rewards[x], reverse = True)[:self.b]
+            order_of_directions = sorted(max_rewards.keys(), key = lambda x:max_rewards[x], reverse = True)
             rollouts = [(positive_rewards[k], negative_rewards[k], random_directions[k]) for k in order_of_directions]
             
-            policy.update(rollouts, reward_sigma)
+            policy.update(rollouts, reward_sigma, self.b)
 
             reward = self.calculate_rewards(env, normalizer, policy)
             print('After iteration #:', i, 'the reward is:', reward)
@@ -66,12 +66,43 @@ class ARS():
             # Uncomment here if you want to see how the agent prgoresses in the environment after each learning epoch
             # agent is rendered until done = True, i.e. until the episode is over (for example, it falls down)
 
-            #state = env.reset()
-            #done = False
-            #while not done:
-            #    env.render()
-            #    action = policy.simulate_step(state)
-            #    state, _, done, _ = env.step(action)
+            state = env.reset()
+            done = False
+            while not done:
+                env.render()
+                action = policy.simulate_step(state)
+                state, _, done, _ = env.step(action)
+
+class ARS_V2(ARS_V2_t):
+
+    def __init__(self):
+        super().__init__()
+        # In contrast to ARS V2_t, in V2 we do not drop those directions that yield the least improvement of the reward
+        self.b = self.N_of_directions
+
+
+class ARS_V1_t(ARS_V2_t):
+
+    # In contrast to ARS V2_t, here (ARS V1_t) we do not normalize the states by its mean and standard deviation
+    def calculate_rewards(self, env, normalizer, policy, sign = None, direction = None):
+        state = env.reset()
+        done = False
+        num_updates = 0.
+        sum_rewards = 0
+        while not done and num_updates < self.episode_length:
+            action = policy.evaluate(state, sign, direction)
+            state, reward, done, _ = env.step(action)
+            reward = max(min(reward, 1), -1)
+            sum_rewards += reward
+            num_updates += 1
+        return sum_rewards
+
+class ARS_V1(ARS_V1_t):
+    
+    def __init__(self):
+        super().__init__()
+        # In contrast to V2_t, in V2 we do not drop those directions that yield the least improvement of the reward
+        self.b = self.N_of_directions
 
 class Normalizer():
     
@@ -110,9 +141,9 @@ class Policy():
         
         return self.theta.dot(state)
        
-    def update(self, rollouts, reward_sigma):
+    def update(self, rollouts, reward_sigma, b):
         update_step = np.zeros(self.theta.shape)
-        for positive_reward, negative_reward, direction in rollouts:
+        for positive_reward, negative_reward, direction in rollouts[:b]:
             update_step += (positive_reward - negative_reward) * direction
         self.theta += ars.alpha / (ars.b * reward_sigma) * update_step
 
@@ -124,6 +155,7 @@ class Policy():
 if __name__ == '__main__':
 
     env = gym.make('HalfCheetah-v2')
+    # Uncomment here if you want to include monitoring
     #env = wrappers.Monitor(env, monitor_dir, video_callable=lambda x: True, force = True)
     state_shape = env.observation_space.shape[0]
     action_shape = env.action_space.shape[0]
@@ -131,5 +163,5 @@ if __name__ == '__main__':
     normalizer = Normalizer(state_shape)
     policy = Policy(state_shape, action_shape)
     
-    ars = ARS()
+    ars = ARS_V2_t()
     ars.train(env, policy, normalizer)
